@@ -33,6 +33,33 @@ describe("condition variables", () => {
     expect(cv.waiting).toEqual(0);
   });
 
+  it("signals only one when notifies one, with intermediate steps", async () => {
+    const cv = new Condition();
+
+    const firstNotify = cv.wait();
+    const secondNotify = cv.wait();
+    expect(cv.waiting).toEqual(2);
+    cv.notifyOne();
+
+    expect(cv.waiting).toEqual(1);
+    cv.notifyOne();
+
+    let notifications = 0;
+    const incrementIfNotified = (notified: boolean) => {
+      if (notified) {
+        notifications++;
+      }
+    };
+
+    await Promise.all([
+      firstNotify.then(incrementIfNotified),
+      secondNotify.then(incrementIfNotified),
+    ]);
+
+    expect(notifications).toEqual(2);
+    expect(cv.waiting).toEqual(0);
+  });
+
   it("signals all when notifies all", async () => {
     const cv = new Condition();
     const controller = new AbortController();

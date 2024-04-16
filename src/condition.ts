@@ -12,15 +12,14 @@ export class Condition {
     const notifyCallbackIndex = this.handlers.indexOf(handler);
     if (notifyCallbackIndex < 0) return;
     // Here, we're removing the handler callback.
-    if (this.handlers.length === 1) {
-      this.handlers.splice(0, this.handlers.length);
-    } else {
+    if (this.handlers.length > 1) {
       // Splice will move all elements to the right, left. This could turn
       // into an O(n) operation, so we'll turn this into O(1) by copying the
-      // last element into this index, then splicing the end of the array.
-      this.handlers[notifyCallbackIndex] = this.handlers[this.handlers.length];
-      this.handlers.splice(this.handlers.length - 1);
+      // last element into this index, then popping the end of the array.
+      this.handlers[notifyCallbackIndex] =
+        this.handlers[this.handlers.length - 1];
     }
+    this.handlers.pop();
   }
 
   /**
