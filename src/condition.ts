@@ -1,6 +1,9 @@
 export class Condition {
   private readonly handlers: (() => void)[] = [];
 
+  /**
+   * The number of outstanding calls to `wait` on this Condition
+   */
   public get waiting(): number {
     return this.handlers.length;
   }
