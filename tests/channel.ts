@@ -266,3 +266,63 @@ describe("channel", () => {
     expect(gotNumber).toBe(true);
   });
 });
+
+it("supports select with at-most-once execution", async () => {
+  const numberChannel = new Channel<number>();
+  const stringChannel = new Channel<string>();
+  const booleanChannel = new Channel<boolean>();
+
+  const writePromise = (async () => {
+    await Promise.all([
+      numberChannel.write(15),
+      stringChannel.write("something"),
+      booleanChannel.write(true),
+    ]);
+  })();
+
+  let gotBool = false;
+  let gotString = false;
+  let gotNumber = false;
+  let handlersInProgress = 0;
+
+  while (!gotBool || !gotString || !gotNumber) {
+    await Channel.select(
+      booleanChannel,
+      async (boolValue) => {
+        handlersInProgress++;
+        await sleep(1);
+        expect(handlersInProgress).toEqual(1);
+        expect(gotBool).toBe(false);
+        expect(boolValue).toEqual(true);
+        gotBool = true;
+        handlersInProgress--;
+      },
+      stringChannel,
+      async (stringValue) => {
+        handlersInProgress++;
+        await sleep(2);
+        expect(handlersInProgress).toEqual(1);
+        expect(gotString).toBe(false);
+        expect(stringValue).toEqual("something");
+        gotString = true;
+        handlersInProgress--;
+      },
+      numberChannel,
+      async (numberValue) => {
+        handlersInProgress++;
+        await sleep(3);
+        expect(handlersInProgress).toEqual(1);
+        expect(gotNumber).toBe(false);
+        expect(numberValue).toEqual(15);
+        gotNumber = true;
+        handlersInProgress--;
+      }
+    );
+  }
+
+  await writePromise;
+
+  expect(gotBool).toBe(true);
+  expect(gotString).toBe(true);
+  expect(gotNumber).toBe(true);
+});

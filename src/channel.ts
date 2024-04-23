@@ -1,5 +1,4 @@
 import { Condition } from "./condition";
-import { Mutex } from "./mutex";
 
 export class ChannelClosedException extends Error {}
 export class ReadCancelledException extends Error {}
@@ -64,7 +63,10 @@ export class Channel<T> {
     if (this.closed) throw new ChannelClosedException();
   }
 
-  public async read(signal?: AbortSignal): Promise<T> {
+  private async readInternal(
+    shouldTakeRead: () => boolean,
+    signal: AbortSignal | undefined
+  ): Promise<T> {
     while (
       // If readSerial === writeSerial, we have to wait for a writer
       // to give us a value. We'll say >= just to be safe.
@@ -78,11 +80,19 @@ export class Channel<T> {
     }
 
     if (this.closed) throw new ChannelClosedException();
+    // We expose this to ensure at-most-once handler execution in selects.
+    if (!shouldTakeRead()) throw new ReadCancelledException();
 
     const result = this.value!;
     this.readSerial++;
     this.writeReadCV.notifyOne();
     return result;
+  }
+
+  private readonly alwaysTakeRead = () => true;
+
+  public async read(signal?: AbortSignal): Promise<T> {
+    return await this.readInternal(this.alwaysTakeRead, signal);
   }
 
   public async *iterate(signal?: AbortSignal): AsyncIterableIterator<T> {
@@ -108,21 +118,23 @@ export class Channel<T> {
     const abortOnExternalSignal = () => controller.abort();
     signal?.addEventListener("abort", abortOnExternalSignal, { once: true });
 
-    const handlerMutex = new Mutex();
+    // This ensures that at most one handler will run, and that at most one
+    // channel will have its read value taken.
+    let didRead = false;
+    const shouldTakeRead = () => {
+      if (didRead) return false;
+      didRead = true;
+      return true;
+    };
 
     try {
       const channelReads = options.map(([channel], i) =>
         channel
-          .read(controller.signal)
+          .readInternal(shouldTakeRead, controller.signal)
           .then((value) => {
             controller.abort(); // Cancel as many of the other reads as we can
-            // While we'd ideally like at most one handler per select invocation,
-            // this is not always going to be possible with the current internals
-            // of this channel implementation. As a result, we have to run handlers
-            // for all channels that returned a value when they were cancelled.
-            // We can, however, ensure that only one handler is running at any
-            // point in time _during_ the execution of this select.
-            return handlerMutex.withLock(() => options[i][1](value));
+            // Since we have the read value here, we'll execute the handler.
+            return options[i][1](value);
           })
           .catch((x: unknown) => {
             // We ignore ReadCancelledException here.
