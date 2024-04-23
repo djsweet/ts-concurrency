@@ -143,4 +143,49 @@ describe("channel", () => {
 
     await writePromise;
   });
+
+  it("supports select", async () => {
+    const numberChannel = new Channel<number>();
+    const stringChannel = new Channel<string>();
+    const booleanChannel = new Channel<boolean>();
+
+    const writePromise = (async () => {
+      await numberChannel.write(15);
+      await stringChannel.write("something");
+      await booleanChannel.write(true);
+    })();
+
+    let gotBool = false;
+    let gotString = false;
+    let gotNumber = false;
+
+    while (!gotBool || !gotString || !gotNumber) {
+      await Channel.select(
+        booleanChannel,
+        async (boolValue) => {
+          expect(gotBool).toBe(false);
+          expect(boolValue).toEqual(true);
+          gotBool = true;
+        },
+        stringChannel,
+        async (stringValue) => {
+          expect(gotString).toBe(false);
+          expect(stringValue).toEqual("something");
+          gotString = true;
+        },
+        numberChannel,
+        async (numberValue) => {
+          expect(gotNumber).toBe(false);
+          expect(numberValue).toEqual(15);
+          gotNumber = true;
+        }
+      );
+    }
+
+    await writePromise;
+
+    expect(gotBool).toBe(true);
+    expect(gotString).toBe(true);
+    expect(gotNumber).toBe(true);
+  });
 });
