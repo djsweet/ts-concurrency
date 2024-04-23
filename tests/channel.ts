@@ -1,5 +1,6 @@
 import {
   Channel,
+  ChannelClosedException,
   ReadCancelledException,
   WriteCancelledException,
 } from "../src/channel";
@@ -124,6 +125,58 @@ describe("channel", () => {
     expect(channel.isClosed).toBe(false);
   });
 
+  it("supports closing on pre-existing reads and new writes", async () => {
+    let readRejected = false;
+    const channel = new Channel<number>();
+    const readPromise = channel.read().catch((x: unknown) => {
+      expect(readRejected).toBe(false);
+      expect(x).toBeInstanceOf(ChannelClosedException);
+      readRejected = true;
+    });
+
+    expect(channel.isClosed).toBe(false);
+    channel.close();
+    expect(channel.isClosed).toBe(true);
+    let writeRejected = false;
+    try {
+      await channel.write(7);
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(ChannelClosedException);
+      writeRejected = true;
+    }
+
+    expect(writeRejected).toBe(true);
+    await readPromise;
+    expect(readRejected).toBe(true);
+    expect(channel.isClosed).toBe(true);
+  });
+
+  it("supports closing on pre-existing writes and new reads", async () => {
+    let writeRejected = false;
+    const channel = new Channel<number>();
+    const writePromise = channel.write(7).catch((x: unknown) => {
+      expect(writeRejected).toBe(false);
+      expect(x).toBeInstanceOf(ChannelClosedException);
+      writeRejected = true;
+    });
+
+    expect(channel.isClosed).toBe(false);
+    channel.close();
+    expect(channel.isClosed).toBe(true);
+    let readRejected = false;
+    try {
+      await channel.read();
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(ChannelClosedException);
+      readRejected = true;
+    }
+
+    expect(readRejected).toBe(true);
+    await writePromise;
+    expect(writeRejected).toBe(true);
+    expect(channel.isClosed).toBe(true);
+  });
+
   it("supports iteration", async () => {
     const channel = new Channel<number>();
     const controller = new AbortController();
@@ -136,6 +189,26 @@ describe("channel", () => {
 
     const numbers: number[] = [];
     for await (const element of channel.iterate(controller.signal)) {
+      numbers.push(element);
+    }
+    for (let i = 0; i < 10; i++) {
+      expect(numbers[i]).toEqual(i);
+    }
+
+    await writePromise;
+  });
+
+  it("supports iteration with channel closure", async () => {
+    const channel = new Channel<number>();
+    const writePromise = (async () => {
+      for (let i = 0; i < 10; i++) {
+        await channel.write(i);
+      }
+      channel.close();
+    })();
+
+    const numbers: number[] = [];
+    for await (const element of channel.iterate()) {
       numbers.push(element);
     }
     for (let i = 0; i < 10; i++) {
