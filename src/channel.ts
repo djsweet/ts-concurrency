@@ -4,6 +4,40 @@ export class ChannelClosedException extends Error {}
 export class ReadCancelledException extends Error {}
 export class WriteCancelledException extends Error {}
 
+/**
+ * Go-style, unbuffered, unidirectional data channel
+ *
+ * A channel is a concurrency primitive popularized by Go
+ * (although existing in preceding programming languages)
+ * that establishes a unidirectional write-read flow between
+ * two concurrent processes.
+ *
+ * Consumers call {@link Channel#read} to receive values
+ * from producers, and producers call {@link Channel#write}
+ * to send values to consumers. Every write corresponds to
+ * at most one read, and every read corresponds to at most one
+ * write.
+ *
+ * If a reader attempts to read before a writer provides a
+ * value, the {@link Channel#read} method blocks until a
+ * write is made available or the read attempt is cancelled
+ * with an optional `AbortSignal`.
+ *
+ * If a writer attempts to write before a reader prepares to
+ * read a value, the {@link Channel#write} method blocks until
+ * a read attempt occurs or the write attempt is cancelled with
+ * an optional `AbortSignal`.
+ *
+ * Concurrent reads from multiple channels are provided by
+ * {@link Channel#select}, which emulates the semantics of
+ * Go's `select` statement with respect to channel read operations.
+ *
+ * Iteration over all supplied channel reads is provided by
+ * {@link Channel.iterate}, which emulates the semantics of
+ * Go's `for x := range c` statement. Iteration continues
+ * until the channel is closed, or the optional `AbortSignal`
+ * indicates that the iteration is cancelled.
+ */
 export class Channel<T> {
   private readSerial = Number.MIN_SAFE_INTEGER;
   private writeSerial = Number.MIN_SAFE_INTEGER;
@@ -20,6 +54,14 @@ export class Channel<T> {
     return this.closed;
   }
 
+  /**
+   * Closes the channel to prevent future communications
+   *
+   * All pending reads and writes are cancelled and result
+   * in a {@link ChannelClosedException} being thrown, and
+   * all future reads and writes immediately result in a
+   * {@link ChannelClosedException} being thrown.
+   */
   public close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -28,6 +70,22 @@ export class Channel<T> {
     this.writeWriteCV.notifyAll();
   }
 
+  /**
+   * Produces a value for pending or future calls to {@link Channel.read}
+   *
+   * Each call to this method corresponds to at most one {@link Channel.read}
+   * call. If no outstanding readers are available, this method blocks until
+   * a call to {@link Channel.read} is available.
+   *
+   * Because of the at-most-once semantics of writes corresponding to reads,
+   * outstanding writers do block each other. If two writes are established,
+   * then a single read occurs, one of the two writes will remain outstanding.
+   *
+   * @param value - The value to send to a {@link Channel.read} call
+   * @param signal - An optional `AbortSignal` that can be used to cancel the write attempt
+   * @throws WriteCancelledException if the optional `signal` has been aborted
+   * @throws ChannelClosedException if the underlying channel has been closed
+   */
   public async write(value: T, signal?: AbortSignal): Promise<void> {
     while (this.valueInTransit && !this.closed) {
       const fromNotify = await this.writeWriteCV.wait(signal);
@@ -53,7 +111,7 @@ export class Channel<T> {
       this.readSerial++;
     }
 
-    // By this point, the reader has read the value.
+    // By this point, the reader has read the value, or we've given up.
     // We should signal another writer that it can write.
     this.value = undefined; // Don't hold on to the value so that we can GC it
     this.valueInTransit = false;
@@ -91,10 +149,33 @@ export class Channel<T> {
 
   private readonly alwaysTakeRead = () => true;
 
+  /**
+   * Consumes a value produced by pending or future calls to {@link Channel#write}
+   *
+   * Each call to this method corresponds to at most one {@link Channel.write}
+   * call. If no outstanding readers are available, this method blocks until
+   * a call to {@link Channel.write} is available.
+   *
+   * Because of the at-most-once semantics of writes corresponding to reads,
+   * outstanding readers do block each other. If two reads are established,
+   * then a single write occurs, one of the two reads will remain outstanding.
+   *
+   * @param signal - An optional `AbortSignal`
+   * @returns A value produced by a call to {@link Channel#write}
+   * @throws ReadCancelledException if the optional `signal` has been aborted
+   * @throws ChannelClosedException if the underlying channel has been closed
+   */
   public async read(signal?: AbortSignal): Promise<T> {
     return await this.readInternal(this.alwaysTakeRead, signal);
   }
 
+  /**
+   * Iterates over this channel by repeatedly calling {@link Channel#read}
+   *
+   * The iteration continues until either the channel has been closed with
+   * {@link Channel#close}, or the optional `AbortSignal` has been aborted.
+   * @param signal - An optional `AbortSignal` that can be used to cancel iteration
+   */
   public async *iterate(signal?: AbortSignal): AsyncIterableIterator<T> {
     while (signal?.aborted !== true && !this.closed) {
       try {
@@ -149,7 +230,9 @@ export class Channel<T> {
     }
   }
 
-  // This simulates Go's select statement for up to five channels
+  /**
+   * Simulates Go's `select` statement with channel reads up to five channels
+   */
   public static async select<T1, T2>(
     channel1: Channel<T1>,
     handler1: (value: T1) => Promise<void>,
