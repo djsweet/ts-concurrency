@@ -83,4 +83,17 @@ export class Channel<T> {
     this.writeReadCV.notifyOne();
     return result;
   }
+
+  public async *iterate(signal?: AbortSignal): AsyncIterableIterator<T> {
+    while (signal?.aborted !== true && !this.closed) {
+      try {
+        const nextValue = await this.read(signal);
+        yield nextValue;
+      } catch (e: unknown) {
+        if (e instanceof ReadCancelledException) break;
+        if (e instanceof ChannelClosedException) break;
+        throw e;
+      }
+    }
+  }
 }

@@ -122,4 +122,25 @@ describe("channel", () => {
     await writeAfterCancelPromise;
     expect(channel.isClosed).toBe(false);
   });
+
+  it("supports iteration", async () => {
+    const channel = new Channel<number>();
+    const controller = new AbortController();
+    const writePromise = (async () => {
+      for (let i = 0; i < 10; i++) {
+        await channel.write(i);
+      }
+      controller.abort();
+    })();
+
+    const numbers: number[] = [];
+    for await (const element of channel.iterate(controller.signal)) {
+      numbers.push(element);
+    }
+    for (let i = 0; i < 10; i++) {
+      expect(numbers[i]).toEqual(i);
+    }
+
+    await writePromise;
+  });
 });
