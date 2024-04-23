@@ -29,6 +29,8 @@ export class Condition {
    * @returns Whether the wait was caused by a notification. If false, the wait has been aborted.
    */
   public async wait(abortSignal?: AbortSignal): Promise<boolean> {
+    if (abortSignal?.aborted === true) return false;
+
     return await new Promise((resolve) => {
       const cleanup = () => {
         abortSignal?.removeEventListener("abort", resolveByAbort);
