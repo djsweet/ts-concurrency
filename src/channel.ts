@@ -1,4 +1,5 @@
 import { Condition } from "./condition";
+import { Mutex } from "./mutex";
 
 export class ChannelClosedException extends Error {}
 export class ReadCancelledException extends Error {}
@@ -107,6 +108,8 @@ export class Channel<T> {
     const abortOnExternalSignal = () => controller.abort();
     signal?.addEventListener("abort", abortOnExternalSignal, { once: true });
 
+    const handlerMutex = new Mutex();
+
     try {
       const channelReads = options.map(([channel], i) =>
         channel
@@ -117,7 +120,9 @@ export class Channel<T> {
             // this is not always going to be possible with the current internals
             // of this channel implementation. As a result, we have to run handlers
             // for all channels that returned a value when they were cancelled.
-            return options[i][1](value);
+            // We can, however, ensure that only one handler is running at any
+            // point in time _during_ the execution of this select.
+            return handlerMutex.withLock(() => options[i][1](value));
           })
           .catch((x: unknown) => {
             // We ignore ReadCancelledException here.
