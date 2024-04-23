@@ -3,6 +3,7 @@ import {
   ReadCancelledException,
   WriteCancelledException,
 } from "../src/channel";
+import { sleep } from "../src/sleep";
 
 describe("channel", () => {
   it("supports writes before reads", async () => {
@@ -163,18 +164,21 @@ describe("channel", () => {
       await Channel.select(
         booleanChannel,
         async (boolValue) => {
+          await sleep(1);
           expect(gotBool).toBe(false);
           expect(boolValue).toEqual(true);
           gotBool = true;
         },
         stringChannel,
         async (stringValue) => {
+          await sleep(2);
           expect(gotString).toBe(false);
           expect(stringValue).toEqual("something");
           gotString = true;
         },
         numberChannel,
         async (numberValue) => {
+          await sleep(3);
           expect(gotNumber).toBe(false);
           expect(numberValue).toEqual(15);
           gotNumber = true;

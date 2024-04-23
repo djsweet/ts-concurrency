@@ -108,6 +108,7 @@ export class Channel<T> {
     signal?.addEventListener("abort", abortOnExternalSignal, { once: true });
 
     try {
+      let handlerRan = false;
       const channelReads = options.map(([channel], i) =>
         channel
           .read(controller.signal)
@@ -117,12 +118,17 @@ export class Channel<T> {
           })
           .then((value) => {
             controller.abort(); // Cancel as many of the other reads as we can
-            // However, we might still read from all channels before cancellation,
-            // so we should attempt to execute the handler here instead.
+
+            // Only run at most one handler per select.
+            if (handlerRan) return;
+            handlerRan = true;
+
             return options[i][1](value);
           })
       );
-      await Promise.race(channelReads);
+      // Instead of Promise.race, we use a Promise.all paired with the above boolean
+      // to ensure at most one handler runs all the way to completion.
+      await Promise.all(channelReads);
     } finally {
       signal?.removeEventListener("abort", abortOnExternalSignal);
     }
