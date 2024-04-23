@@ -108,22 +108,20 @@ export class Channel<T> {
     signal?.addEventListener("abort", abortOnExternalSignal, { once: true });
 
     try {
-      let handlerRan = false;
       const channelReads = options.map(([channel], i) =>
         channel
           .read(controller.signal)
+          .then((value) => {
+            controller.abort(); // Cancel as many of the other reads as we can
+            // While we'd ideally like at most one handler per select invocation,
+            // this is not always going to be possible with the current internals
+            // of this channel implementation. As a result, we have to run handlers
+            // for all channels that returned a value when they were cancelled.
+            return options[i][1](value);
+          })
           .catch((x: unknown) => {
             // We ignore ReadCancelledException here.
             if (!(x instanceof ReadCancelledException)) throw x;
-          })
-          .then((value) => {
-            controller.abort(); // Cancel as many of the other reads as we can
-
-            // Only run at most one handler per select.
-            if (handlerRan) return;
-            handlerRan = true;
-
-            return options[i][1](value);
           })
       );
       // Instead of Promise.race, we use a Promise.all paired with the above boolean
