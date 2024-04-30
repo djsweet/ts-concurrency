@@ -9,6 +9,9 @@ So far it supplies
 - Condition variables
 - Mutexes
 - Semaphores
+- Concurrency Limiters with backpressure
+- Request rate governors
+- Recurring serialized "background jobs"
 - Go-style Channels
 
 ## License
