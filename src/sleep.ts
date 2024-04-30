@@ -2,6 +2,7 @@ export async function sleep(
   sleepTime: number,
   signal?: AbortSignal
 ): Promise<boolean> {
+  if (signal?.aborted === true) return false;
   return new Promise((resolve) => {
     let successTimeout: NodeJS.Timeout | undefined = undefined;
     let resolved = false;
