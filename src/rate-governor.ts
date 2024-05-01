@@ -1,7 +1,7 @@
 import { sleep } from "./sleep";
 import { monotonicNow } from "./time";
 
-export class QuotaGovernor {
+export class RateGovernor {
   private waitPeriodMS: number;
   public constructor(public readonly ratePerSecond: number) {
     this.waitPeriodMS = 1000 / ratePerSecond;
